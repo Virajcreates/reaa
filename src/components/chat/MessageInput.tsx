@@ -209,5 +209,3 @@ export function MessageInput({
     </form>
   );
 }
-  );
-}
