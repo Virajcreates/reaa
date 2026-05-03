@@ -15,7 +15,7 @@ export default async function handler(req, res) {
 
   try {
     const { model, contents, systemInstruction, generationConfig } = req.body;
-    const modelName = model || 'gemini-2.0-flash';
+    const modelName = model || 'gemini-1.5-flash';
     const url = `${GEMINI_BASE_URL}/models/${modelName}:generateContent?key=${apiKey}`;
 
     const response = await fetch(url, {

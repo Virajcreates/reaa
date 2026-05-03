@@ -61,8 +61,8 @@ const config: Config = {
   },
   gemini: {
     apiKey: import.meta.env.VITE_GEMINI_API_KEY || '',
-    embeddingModel: 'gemini-embedding-2',
-    chatModel: 'gemini-2.0-flash',
+    embeddingModel: 'text-embedding-004',
+    chatModel: 'gemini-1.5-flash',
   },
   pinecone: {
     apiKey: import.meta.env.VITE_PINECONE_API_KEY || '',

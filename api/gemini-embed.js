@@ -16,7 +16,7 @@ export default async function handler(req, res) {
 
   try {
     const { texts, model, dimensionality } = req.body;
-    const modelName = model || 'gemini-embedding-2';
+    const modelName = model || 'text-embedding-004';
 
     // Batch embedding
     if (Array.isArray(texts) && texts.length > 1) {
