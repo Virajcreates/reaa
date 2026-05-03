@@ -166,8 +166,6 @@ export async function queryWithContext(
   contextChunks: { content: string; filename: string; similarity: number }[],
   language: string = 'English'
 ): Promise<string> {
-  const url = `${GEMINI_BASE_URL}/models/${config.gemini.chatModel}:generateContent?key=${config.gemini.apiKey}`;
-
   // Build context from retrieved chunks
   const context = contextChunks
     .map(
