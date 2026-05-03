@@ -35,14 +35,32 @@ export async function searchPinecone(
   queryEmbedding: number[],
   topK: number = config.rag.topK
 ): Promise<DocumentSearchResult[]> {
-  const index = getPineconeIndex();
+  let queryResponse;
 
-  // Query Pinecone
-  const queryResponse = await index.query({
-    vector: queryEmbedding,
-    topK,
-    includeMetadata: true,
-  });
+  if (import.meta.env.PROD) {
+    // Production (Vercel): Use serverless proxy
+    const proxyResponse = await fetch('/api/pinecone-query', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ vector: queryEmbedding, topK }),
+    });
+
+    if (!proxyResponse.ok) {
+      const err = await proxyResponse.json().catch(() => ({}));
+      throw new Error(err.error || proxyResponse.statusText);
+    }
+    queryResponse = await proxyResponse.json();
+  } else {
+    // Localhost: Direct SDK call
+    const index = getPineconeIndex();
+
+    // Query Pinecone
+    queryResponse = await index.query({
+      vector: queryEmbedding,
+      topK,
+      includeMetadata: true,
+    });
+  }
 
   if (!queryResponse.matches || queryResponse.matches.length === 0) {
     return [];

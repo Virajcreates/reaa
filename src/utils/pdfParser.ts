@@ -17,22 +17,39 @@ export async function extractTextFromPDF(file: File): Promise<string> {
     reader.readAsDataURL(file);
   });
 
-  const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta';
-  const url = `${GEMINI_BASE_URL}/models/${config.gemini.chatModel}:generateContent?key=${config.gemini.apiKey}`;
+  const payload = {
+    contents: [{
+      role: 'user',
+      parts: [
+        { text: 'Please accurately transcribe all the text in this document. Extract it exactly as it appears. Do not add any extra commentary or conversational filler. Just return the extracted text.' },
+        { inlineData: { mimeType: 'application/pdf', data: base64Data } }
+      ]
+    }]
+  };
 
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{
-        role: 'user',
-        parts: [
-          { text: 'Please accurately transcribe all the text in this document. Extract it exactly as it appears. Do not add any extra commentary or conversational filler. Just return the extracted text.' },
-          { inlineData: { mimeType: 'application/pdf', data: base64Data } }
-        ]
-      }]
-    })
-  });
+  let response;
+
+  if (import.meta.env.PROD) {
+    // Production (Vercel): Use serverless proxy
+    response = await fetch('/api/gemini-chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: config.gemini.chatModel,
+        ...payload
+      })
+    });
+  } else {
+    // Localhost: Direct call
+    const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta';
+    const url = `${GEMINI_BASE_URL}/models/${config.gemini.chatModel}:generateContent?key=${config.gemini.apiKey}`;
+
+    response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+  }
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));

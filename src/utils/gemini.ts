@@ -6,19 +6,34 @@ const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta';
  * Generate an embedding vector for a single text using Gemini API.
  */
 export async function generateEmbedding(text: string): Promise<number[]> {
-  const url = `${GEMINI_BASE_URL}/models/${config.gemini.embeddingModel}:embedContent?key=${config.gemini.apiKey}`;
+  let response;
 
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: `models/${config.gemini.embeddingModel}`,
-      content: {
-        parts: [{ text }],
-      },
-      outputDimensionality: 768,
-    }),
-  });
+  if (import.meta.env.PROD) {
+    // Production (Vercel): Use serverless proxy
+    response = await fetch('/api/gemini-embed', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        texts: [text],
+        model: config.gemini.embeddingModel,
+        dimensionality: 768
+      })
+    });
+  } else {
+    // Localhost: Direct call
+    const url = `${GEMINI_BASE_URL}/models/${config.gemini.embeddingModel}:embedContent?key=${config.gemini.apiKey}`;
+    response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: `models/${config.gemini.embeddingModel}`,
+        content: {
+          parts: [{ text }],
+        },
+        outputDimensionality: 768,
+      }),
+    });
+  }
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
@@ -28,7 +43,8 @@ export async function generateEmbedding(text: string): Promise<number[]> {
   }
 
   const data = await response.json();
-  return data.embedding.values;
+  // Proxy returns { embedding: [...] }, direct API returns { embedding: { values: [...] } }
+  return import.meta.env.PROD ? data.embedding : data.embedding.values;
 }
 
 /**
@@ -37,18 +53,32 @@ export async function generateEmbedding(text: string): Promise<number[]> {
  */
 export async function generatePineconeEmbedding(text: string): Promise<number[]> {
   const modelName = 'gemini-embedding-001';
-  const url = `${GEMINI_BASE_URL}/models/${modelName}:embedContent?key=${config.gemini.apiKey}`;
+  let response;
 
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: `models/${modelName}`,
-      content: {
-        parts: [{ text }],
-      },
-    }),
-  });
+  if (import.meta.env.PROD) {
+    // Production (Vercel): Use serverless proxy
+    response = await fetch('/api/gemini-embed', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        texts: [text],
+        model: modelName
+      })
+    });
+  } else {
+    // Localhost: Direct call
+    const url = `${GEMINI_BASE_URL}/models/${modelName}:embedContent?key=${config.gemini.apiKey}`;
+    response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: `models/${modelName}`,
+        content: {
+          parts: [{ text }],
+        },
+      }),
+    });
+  }
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
@@ -58,7 +88,7 @@ export async function generatePineconeEmbedding(text: string): Promise<number[]>
   }
 
   const data = await response.json();
-  return data.embedding.values;
+  return import.meta.env.PROD ? data.embedding : data.embedding.values;
 }
 
 /**
@@ -76,21 +106,36 @@ export async function generateEmbeddings(
   for (let i = 0; i < texts.length; i += BATCH_SIZE) {
     const batch = texts.slice(i, i + BATCH_SIZE);
 
-    const url = `${GEMINI_BASE_URL}/models/${config.gemini.embeddingModel}:batchEmbedContents?key=${config.gemini.apiKey}`;
+    let response;
 
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        requests: batch.map((text) => ({
-          model: `models/${config.gemini.embeddingModel}`,
-          content: {
-            parts: [{ text }],
-          },
-          outputDimensionality: 768,
-        })),
-      }),
-    });
+    if (import.meta.env.PROD) {
+      // Production (Vercel): Use serverless proxy
+      response = await fetch('/api/gemini-embed', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          texts: batch,
+          model: config.gemini.embeddingModel,
+          dimensionality: 768
+        })
+      });
+    } else {
+      // Localhost: Direct call
+      const url = `${GEMINI_BASE_URL}/models/${config.gemini.embeddingModel}:batchEmbedContents?key=${config.gemini.apiKey}`;
+      response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          requests: batch.map((text) => ({
+            model: `models/${config.gemini.embeddingModel}`,
+            content: {
+              parts: [{ text }],
+            },
+            outputDimensionality: 768,
+          })),
+        }),
+      });
+    }
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
@@ -100,7 +145,10 @@ export async function generateEmbeddings(
     }
 
     const data = await response.json();
-    const batchEmbeddings = data.embeddings.map((e: any) => e.values);
+    // Proxy returns { embeddings: [[...], [...]] }, direct API returns { embeddings: [{ values: [...] }, ...] }
+    const batchEmbeddings = import.meta.env.PROD 
+      ? data.embeddings 
+      : data.embeddings.map((e: any) => e.values);
     allEmbeddings.push(...batchEmbeddings);
 
     completed += batch.length;
@@ -153,26 +201,55 @@ ${query}
 
 Please provide a comprehensive answer based on the above context.`;
 
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [
-        {
-          role: 'user',
-          parts: [{ text: userPrompt }],
+  let response;
+
+  if (import.meta.env.PROD) {
+    // Production (Vercel): Use serverless proxy
+    response = await fetch('/api/gemini-chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: config.gemini.chatModel,
+        contents: [
+          {
+            role: 'user',
+            parts: [{ text: userPrompt }],
+          },
+        ],
+        systemInstruction: {
+          parts: [{ text: systemPrompt }],
         },
-      ],
-      systemInstruction: {
-        parts: [{ text: systemPrompt }],
-      },
-      generationConfig: {
-        temperature: 0.3,
-        topP: 0.8,
-        maxOutputTokens: 2048,
-      },
-    }),
-  });
+        generationConfig: {
+          temperature: 0.3,
+          topP: 0.8,
+          maxOutputTokens: 2048,
+        },
+      })
+    });
+  } else {
+    // Localhost: Direct call
+    const url = `${GEMINI_BASE_URL}/models/${config.gemini.chatModel}:generateContent?key=${config.gemini.apiKey}`;
+    response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [
+          {
+            role: 'user',
+            parts: [{ text: userPrompt }],
+          },
+        ],
+        systemInstruction: {
+          parts: [{ text: systemPrompt }],
+        },
+        generationConfig: {
+          temperature: 0.3,
+          topP: 0.8,
+          maxOutputTokens: 2048,
+        },
+      }),
+    });
+  }
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));

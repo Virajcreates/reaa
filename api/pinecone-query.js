@@ -8,8 +8,8 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  const apiKey = process.env.PINECONE_API_KEY;
-  const host = process.env.PINECONE_HOST;
+  const apiKey = process.env.PINECONE_API_KEY || process.env.VITE_PINECONE_API_KEY;
+  const host = process.env.PINECONE_HOST || process.env.VITE_PINECONE_HOST;
   if (!apiKey || !host) return res.status(500).json({ error: 'Pinecone not configured' });
 
   try {
