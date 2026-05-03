@@ -3,100 +3,67 @@ import config from '@/config';
 const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta';
 
 /**
- * Smart fetch that tries to use the local proxy first (for production security)
- * but falls back to direct API calls if the proxy is missing (for local development).
- */
-async function smartFetch(proxyPath: string, directUrl: string, body: any) {
-  try {
-    // 1. Try local proxy
-    const proxyResponse = await fetch(proxyPath, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-
-    // If proxy exists and worked, return it
-    if (proxyResponse.ok) return proxyResponse;
-    
-    // If proxy exists but returned error, throw it (don't fallback if it's a real API error)
-    if (proxyResponse.status !== 404) return proxyResponse;
-  } catch (e) {
-    // Proxy failed to even connect (local dev server doesn't have it)
-  }
-
-  // 2. Fallback to direct call (Local Dev)
-  if (!config.gemini.apiKey) {
-    throw new Error('Gemini API key is not configured.');
-  }
-
-  return fetch(`${directUrl}?key=${config.gemini.apiKey}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-}
-
-/**
- * Generate an embedding vector for a single text.
+ * Generate an embedding vector for a single text using Gemini API.
  */
 export async function generateEmbedding(text: string): Promise<number[]> {
-  const modelName = config.gemini.embeddingModel;
-  const body = {
-    texts: [text],
-    model: modelName,
-    dimensionality: 768
-  };
+  const url = `${GEMINI_BASE_URL}/models/${config.gemini.embeddingModel}:embedContent?key=${config.gemini.apiKey}`;
 
-  const response = await smartFetch(
-    '/api/gemini-embed',
-    `${GEMINI_BASE_URL}/models/${modelName}:embedContent`,
-    {
-      model: `models/${modelName}`,
-      content: { parts: [{ text }] },
-      outputDimensionality: 768
-    }
-  );
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: `models/${config.gemini.embeddingModel}`,
+      content: {
+        parts: [{ text }],
+      },
+      outputDimensionality: 768,
+    }),
+  });
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
     throw new Error(
-      `Embedding API error (${response.status}): ${errorData?.error?.message || errorData?.error || response.statusText}`
+      `Embedding API error (${response.status}): ${errorData?.error?.message || response.statusText}`
     );
   }
 
   const data = await response.json();
-  // Handle both proxy response format and direct Gemini format
-  return data.embedding?.values || data.embedding;
+  return data.embedding.values;
 }
 
 /**
- * Generate a 3072-dimensional embedding vector for Pinecone.
+ * Generate a 3072-dimensional embedding vector for Pinecone using Gemini API.
+ * This explicitly uses gemini-embedding-001 to match the n8n DB population.
  */
 export async function generatePineconeEmbedding(text: string): Promise<number[]> {
   const modelName = 'gemini-embedding-001';
-  
-  const response = await smartFetch(
-    '/api/gemini-embed',
-    `${GEMINI_BASE_URL}/models/${modelName}:embedContent`,
-    {
+  const url = `${GEMINI_BASE_URL}/models/${modelName}:embedContent?key=${config.gemini.apiKey}`;
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
       model: `models/${modelName}`,
-      content: { parts: [{ text }] },
-    }
-  );
+      content: {
+        parts: [{ text }],
+      },
+    }),
+  });
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
     throw new Error(
-      `Pinecone Embedding API error (${response.status}): ${errorData?.error?.message || errorData?.error || response.statusText}`
+      `Pinecone Embedding API error (${response.status}): ${errorData?.error?.message || response.statusText}`
     );
   }
 
   const data = await response.json();
-  return data.embedding?.values || data.embedding;
+  return data.embedding.values;
 }
 
 /**
  * Generate embeddings for multiple texts in batches.
+ * Gemini's batchEmbedContents supports up to 100 texts per request.
  */
 export async function generateEmbeddings(
   texts: string[],
@@ -108,30 +75,32 @@ export async function generateEmbeddings(
 
   for (let i = 0; i < texts.length; i += BATCH_SIZE) {
     const batch = texts.slice(i, i + BATCH_SIZE);
-    const modelName = config.gemini.embeddingModel;
 
-    const response = await smartFetch(
-      '/api/gemini-embed',
-      `${GEMINI_BASE_URL}/models/${modelName}:batchEmbedContents`,
-      {
+    const url = `${GEMINI_BASE_URL}/models/${config.gemini.embeddingModel}:batchEmbedContents?key=${config.gemini.apiKey}`;
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
         requests: batch.map((text) => ({
-          model: `models/${modelName}`,
-          content: { parts: [{ text }] },
-          outputDimensionality: 768
+          model: `models/${config.gemini.embeddingModel}`,
+          content: {
+            parts: [{ text }],
+          },
+          outputDimensionality: 768,
         })),
-      }
-    );
+      }),
+    });
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
       throw new Error(
-        `Batch embedding API error (${response.status}): ${errorData?.error?.message || errorData?.error || response.statusText}`
+        `Batch embedding API error (${response.status}): ${errorData?.error?.message || response.statusText}`
       );
     }
 
     const data = await response.json();
-    // Handle both proxy response format and direct Gemini format
-    const batchEmbeddings = data.embeddings?.map((e: any) => e.values || e) || data.embeddings;
+    const batchEmbeddings = data.embeddings.map((e: any) => e.values);
     allEmbeddings.push(...batchEmbeddings);
 
     completed += batch.length;
@@ -142,13 +111,15 @@ export async function generateEmbeddings(
 }
 
 /**
- * Query Gemini LLM with retrieved context chunks.
+ * Query Gemini LLM with retrieved context chunks to generate an answer.
  */
 export async function queryWithContext(
   query: string,
   contextChunks: { content: string; filename: string; similarity: number }[],
   language: string = 'English'
 ): Promise<string> {
+  const url = `${GEMINI_BASE_URL}/models/${config.gemini.chatModel}:generateContent?key=${config.gemini.apiKey}`;
+
   // Build context from retrieved chunks
   const context = contextChunks
     .map(
@@ -182,11 +153,10 @@ ${query}
 
 Please provide a comprehensive answer based on the above context.`;
 
-  const modelName = config.gemini.chatModel;
-  const response = await smartFetch(
-    '/api/gemini-chat',
-    `${GEMINI_BASE_URL}/models/${modelName}:generateContent`,
-    {
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
       contents: [
         {
           role: 'user',
@@ -201,17 +171,19 @@ Please provide a comprehensive answer based on the above context.`;
         topP: 0.8,
         maxOutputTokens: 2048,
       },
-    }
-  );
+    }),
+  });
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
     throw new Error(
-      `Gemini chat API error (${response.status}): ${errorData?.error?.message || errorData?.error || response.statusText}`
+      `Gemini chat API error (${response.status}): ${errorData?.error?.message || response.statusText}`
     );
   }
 
   const data = await response.json();
+
+  // Extract the text from Gemini's response
   const candidates = data.candidates;
   if (!candidates || candidates.length === 0) {
     throw new Error('No response generated from Gemini');
