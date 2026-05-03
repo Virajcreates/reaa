@@ -1,8 +1,8 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import type { UploadedDocument, ProcessingProgress, DocumentSearchResult } from '@/types';
 import { extractTextFromPDF, chunkText } from '@/utils/pdfParser';
 import { generateEmbedding, generateEmbeddings, queryWithContext, generatePineconeEmbedding } from '@/utils/gemini';
-import { insertChunks, searchSimilar, deleteDocuments } from '@/utils/supabaseClient';
+import { insertChunks, searchSimilar, deleteDocuments, fetchSessionDocuments } from '@/utils/supabaseClient';
 import { searchPinecone } from '@/utils/pineconeClient';
 import config from '@/config';
 
@@ -12,6 +12,32 @@ export function useLocalRAG(sessionId: string) {
 
   // Track if we're currently processing to prevent concurrent uploads
   const isProcessingRef = useRef(false);
+  const previousSessionIdRef = useRef(sessionId);
+
+  // Handle session switching
+  useEffect(() => {
+    // If the sessionId changed
+    if (previousSessionIdRef.current !== sessionId) {
+      // If we are transitioning from 'temp-session' to a real chat, we KEEP the UI state
+      // (The backend ChatPage logic handles updating the session_id in the DB)
+      if (previousSessionIdRef.current === 'temp-session' && sessionId !== 'temp-session') {
+        // Do nothing, let the UI keep the uploaded documents
+      } else {
+        // We actually switched chats! Clear the UI and load the new chat's documents
+        setUploadedDocuments([]);
+        setProcessingProgress(null);
+        
+        if (sessionId !== 'temp-session') {
+          fetchSessionDocuments(sessionId).then(docs => {
+            if (docs.length > 0) {
+              setUploadedDocuments(docs);
+            }
+          });
+        }
+      }
+      previousSessionIdRef.current = sessionId;
+    }
+  }, [sessionId]);
 
   const hasDocuments = uploadedDocuments.some((doc) => doc.status === 'ready');
   const isProcessing = processingProgress !== null && processingProgress.stage !== 'done' && processingProgress.stage !== 'error';

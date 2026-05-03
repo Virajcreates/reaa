@@ -120,4 +120,53 @@ export async function getChunkCount(
   return count || 0;
 }
 
+/**
+ * Updates the session ID for documents.
+ * Used when transferring documents from 'temp-session' to a real chat ID.
+ */
+export async function updateSessionId(oldSessionId: string, newSessionId: string): Promise<void> {
+  const supabase = getSupabase();
+  const { error } = await supabase
+    .from('documents')
+    .update({ session_id: newSessionId })
+    .eq('session_id', oldSessionId);
+
+  if (error) {
+    console.error('Error updating session ID:', error);
+    throw new Error(`Failed to update session ID: ${error.message}`);
+  }
+}
+
+/**
+ * Fetch unique uploaded documents for a given session.
+ */
+export async function fetchSessionDocuments(sessionId: string) {
+  const supabase = getSupabase();
+  
+  // Use a simple select with distinct filenames if possible, 
+  // or group by filename on the client side since Supabase JS doesn't support distinct well.
+  const { data, error } = await supabase
+    .from('documents')
+    .select('filename')
+    .eq('session_id', sessionId);
+
+  if (error) {
+    console.error('Error fetching session documents:', error);
+    return [];
+  }
+
+  // Count chunks per filename
+  const fileCounts: Record<string, number> = {};
+  (data || []).forEach((row) => {
+    fileCounts[row.filename] = (fileCounts[row.filename] || 0) + 1;
+  });
+
+  return Object.entries(fileCounts).map(([filename, chunkCount]) => ({
+    filename,
+    chunkCount,
+    status: 'ready' as const,
+    uploadedAt: new Date(),
+  }));
+}
+
 export { getSupabase as supabase };

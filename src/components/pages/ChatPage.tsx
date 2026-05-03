@@ -8,6 +8,7 @@ import { AnimatedBackground } from '@/components/ui';
 import { useChat } from '@/hooks/useChat';
 import { useChats } from '@/hooks/useChats';
 import { useLocalRAG } from '@/hooks/useLocalRAG';
+import { updateSessionId } from '@/utils/supabaseClient';
 import { modifyPromptForLanguage } from '@/utils/helpers';
 import config from '@/config';
 
@@ -40,6 +41,11 @@ export function ChatPage({ userName, onLogout }: ChatPageProps) {
     const title = firstMessageContent.substring(0, 30) + (firstMessageContent.length > 30 ? '...' : '');
     const newChat = await createChat(title);
     if (newChat) {
+      // If we uploaded documents before the chat was created, they are saved under 'temp-session'.
+      // We must tie those documents to the new chat's ID in the database!
+      if (hasDocuments) {
+        await updateSessionId('temp-session', newChat.id);
+      }
       setCurrentChatId(newChat.id);
       return newChat.id;
     }
