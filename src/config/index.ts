@@ -18,14 +18,11 @@ export interface Config {
     anonKey: string;
   };
   gemini: {
-    apiKey: string;
     embeddingModel: string;
     chatModel: string;
   };
   pinecone: {
-    apiKey: string;
     indexName: string;
-    host: string;
   };
   rag: {
     chunkSize: number;
@@ -60,14 +57,11 @@ const config: Config = {
     anonKey: import.meta.env.VITE_SUPABASE_ANON_KEY || '',
   },
   gemini: {
-    apiKey: import.meta.env.VITE_GEMINI_API_KEY || '',
     embeddingModel: 'gemini-embedding-2',
-    chatModel: 'gemini-2.5-flash',
+    chatModel: 'gemini-2.0-flash',
   },
   pinecone: {
-    apiKey: import.meta.env.VITE_PINECONE_API_KEY || '',
     indexName: import.meta.env.VITE_PINECONE_INDEX_NAME || '',
-    host: import.meta.env.VITE_PINECONE_HOST || '',
   },
   rag: {
     chunkSize: 500,

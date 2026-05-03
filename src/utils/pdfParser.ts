@@ -1,7 +1,7 @@
 import config from '@/config';
 
 /**
- * Extract all text content from a PDF file using Gemini 2.5 Flash's multimodal OCR.
+ * Extract all text content from a PDF file using Gemini 2.0 Flash's multimodal OCR via proxy.
  * This handles both digital and scanned (image-based) PDFs seamlessly.
  */
 export async function extractTextFromPDF(file: File): Promise<string> {
@@ -17,13 +17,11 @@ export async function extractTextFromPDF(file: File): Promise<string> {
     reader.readAsDataURL(file);
   });
 
-  const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta';
-  const url = `${GEMINI_BASE_URL}/models/${config.gemini.chatModel}:generateContent?key=${config.gemini.apiKey}`;
-
-  const response = await fetch(url, {
+  const response = await fetch('/api/gemini-chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
+      model: config.gemini.chatModel,
       contents: [{
         role: 'user',
         parts: [
@@ -37,7 +35,7 @@ export async function extractTextFromPDF(file: File): Promise<string> {
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
     throw new Error(
-      `Gemini OCR error (${response.status}): ${errorData?.error?.message || response.statusText}`
+      `Gemini OCR error (${response.status}): ${errorData?.error || response.statusText}`
     );
   }
 

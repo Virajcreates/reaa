@@ -1,69 +1,58 @@
 import config from '@/config';
 
-const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta';
-
 /**
- * Generate an embedding vector for a single text using Gemini API.
+ * Generate an embedding vector for a single text using proxied Gemini API.
  */
 export async function generateEmbedding(text: string): Promise<number[]> {
-  const url = `${GEMINI_BASE_URL}/models/${config.gemini.embeddingModel}:embedContent?key=${config.gemini.apiKey}`;
-
-  const response = await fetch(url, {
+  const response = await fetch('/api/gemini-embed', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: `models/${config.gemini.embeddingModel}`,
-      content: {
-        parts: [{ text }],
-      },
-      outputDimensionality: 768,
+      texts: [text],
+      model: config.gemini.embeddingModel,
+      dimensionality: 768
     }),
   });
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
     throw new Error(
-      `Embedding API error (${response.status}): ${errorData?.error?.message || response.statusText}`
+      `Embedding API error (${response.status}): ${errorData?.error || response.statusText}`
     );
   }
 
   const data = await response.json();
-  return data.embedding.values;
+  return data.embedding;
 }
 
 /**
- * Generate a 3072-dimensional embedding vector for Pinecone using Gemini API.
+ * Generate a 3072-dimensional embedding vector for Pinecone using proxied Gemini API.
  * This explicitly uses gemini-embedding-001 to match the n8n DB population.
  */
 export async function generatePineconeEmbedding(text: string): Promise<number[]> {
   const modelName = 'gemini-embedding-001';
-  const url = `${GEMINI_BASE_URL}/models/${modelName}:embedContent?key=${config.gemini.apiKey}`;
-
-  const response = await fetch(url, {
+  const response = await fetch('/api/gemini-embed', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: `models/${modelName}`,
-      content: {
-        parts: [{ text }],
-      },
+      texts: [text],
+      model: modelName
     }),
   });
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
     throw new Error(
-      `Pinecone Embedding API error (${response.status}): ${errorData?.error?.message || response.statusText}`
+      `Pinecone Embedding API error (${response.status}): ${errorData?.error || response.statusText}`
     );
   }
 
   const data = await response.json();
-  return data.embedding.values;
+  return data.embedding;
 }
 
 /**
- * Generate embeddings for multiple texts in batches.
- * Gemini's batchEmbedContents supports up to 100 texts per request.
+ * Generate embeddings for multiple texts in batches via proxy.
  */
 export async function generateEmbeddings(
   texts: string[],
@@ -76,32 +65,25 @@ export async function generateEmbeddings(
   for (let i = 0; i < texts.length; i += BATCH_SIZE) {
     const batch = texts.slice(i, i + BATCH_SIZE);
 
-    const url = `${GEMINI_BASE_URL}/models/${config.gemini.embeddingModel}:batchEmbedContents?key=${config.gemini.apiKey}`;
-
-    const response = await fetch(url, {
+    const response = await fetch('/api/gemini-embed', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        requests: batch.map((text) => ({
-          model: `models/${config.gemini.embeddingModel}`,
-          content: {
-            parts: [{ text }],
-          },
-          outputDimensionality: 768,
-        })),
+        texts: batch,
+        model: config.gemini.embeddingModel,
+        dimensionality: 768
       }),
     });
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
       throw new Error(
-        `Batch embedding API error (${response.status}): ${errorData?.error?.message || response.statusText}`
+        `Batch embedding API error (${response.status}): ${errorData?.error || response.statusText}`
       );
     }
 
     const data = await response.json();
-    const batchEmbeddings = data.embeddings.map((e: any) => e.values);
-    allEmbeddings.push(...batchEmbeddings);
+    allEmbeddings.push(...data.embeddings);
 
     completed += batch.length;
     onProgress?.(completed, texts.length);
@@ -111,15 +93,13 @@ export async function generateEmbeddings(
 }
 
 /**
- * Query Gemini LLM with retrieved context chunks to generate an answer.
+ * Query Gemini LLM with retrieved context chunks via proxy.
  */
 export async function queryWithContext(
   query: string,
   contextChunks: { content: string; filename: string; similarity: number }[],
   language: string = 'English'
 ): Promise<string> {
-  const url = `${GEMINI_BASE_URL}/models/${config.gemini.chatModel}:generateContent?key=${config.gemini.apiKey}`;
-
   // Build context from retrieved chunks
   const context = contextChunks
     .map(
@@ -153,10 +133,11 @@ ${query}
 
 Please provide a comprehensive answer based on the above context.`;
 
-  const response = await fetch(url, {
+  const response = await fetch('/api/gemini-chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
+      model: config.gemini.chatModel,
       contents: [
         {
           role: 'user',
@@ -177,7 +158,7 @@ Please provide a comprehensive answer based on the above context.`;
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
     throw new Error(
-      `Gemini chat API error (${response.status}): ${errorData?.error?.message || response.statusText}`
+      `Gemini chat API error (${response.status}): ${errorData?.error || response.statusText}`
     );
   }
 
