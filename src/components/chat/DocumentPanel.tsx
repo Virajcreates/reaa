@@ -1,4 +1,5 @@
-import { FileText, X, Trash2, AlertCircle, CheckCircle2, Loader2 } from 'lucide-react';
+import { useState } from 'react';
+import { FileText, X, Trash2, AlertCircle, CheckCircle2, Loader2, ChevronDown, ChevronUp } from 'lucide-react';
 import { Button } from '@/components/ui';
 import type { UploadedDocument, ProcessingProgress } from '@/types';
 import config from '@/config';
@@ -17,25 +18,41 @@ export function DocumentPanel({
   onRemoveDocument,
   onClearAll,
 }: DocumentPanelProps) {
+  const [collapsed, setCollapsed] = useState(false);
+
   if (documents.length === 0 && !processingProgress) {
     return null;
   }
 
+  const readyDocs = documents.filter((d) => d.status === 'ready');
+  const totalChunks = readyDocs.reduce((sum, d) => sum + (d.chunkCount || 0), 0);
+
   return (
     <div className="mb-3 animate-fade-in">
-      {/* Mode Badge */}
+      {/* Mode Badge — clickable to collapse */}
       <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30">
+        <button
+          type="button"
+          onClick={() => setCollapsed((prev) => !prev)}
+          className="flex items-center gap-2 group cursor-pointer"
+          title={collapsed ? 'Show documents' : 'Hide documents'}
+        >
+          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 group-hover:bg-emerald-500/25 transition-colors">
             <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
             <span className="text-xs font-semibold text-emerald-300 tracking-wide uppercase">
               Local RAG Mode
             </span>
           </div>
           <span className="text-xs text-gray-500">
-            {documents.filter((d) => d.status === 'ready').length}/{config.rag.maxFiles} documents
+            {readyDocs.length}/{config.rag.maxFiles} documents
+            {collapsed && totalChunks > 0 && ` · ${totalChunks} chunks`}
           </span>
-        </div>
+          {collapsed ? (
+            <ChevronDown className="h-3.5 w-3.5 text-gray-500 group-hover:text-gray-300 transition-colors" />
+          ) : (
+            <ChevronUp className="h-3.5 w-3.5 text-gray-500 group-hover:text-gray-300 transition-colors" />
+          )}
+        </button>
 
         {documents.length > 0 && (
           <Button
@@ -51,7 +68,7 @@ export function DocumentPanel({
         )}
       </div>
 
-      {/* Processing Progress */}
+      {/* Processing Progress — always visible */}
       {processingProgress && processingProgress.stage !== 'done' && (
         <div className="mb-2 px-3 py-2.5 rounded-xl glass-surface border border-primary-500/20 overflow-hidden">
           <div className="flex items-center gap-2 mb-1.5">
@@ -79,7 +96,7 @@ export function DocumentPanel({
         </div>
       )}
 
-      {/* Success message */}
+      {/* Success message — always visible */}
       {processingProgress && processingProgress.stage === 'done' && (
         <div className="mb-2 px-3 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center gap-2">
           <CheckCircle2 className="h-4 w-4 text-emerald-400 flex-shrink-0" />
@@ -89,9 +106,9 @@ export function DocumentPanel({
         </div>
       )}
 
-      {/* Document List */}
-      {documents.length > 0 && (
-        <div className="flex flex-wrap gap-2">
+      {/* Document List — collapsible */}
+      {!collapsed && documents.length > 0 && (
+        <div className="flex flex-wrap gap-2 transition-all duration-200">
           {documents.map((doc) => (
             <div
               key={doc.filename}
@@ -141,3 +158,4 @@ export function DocumentPanel({
     </div>
   );
 }
+
