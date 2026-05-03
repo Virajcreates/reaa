@@ -170,40 +170,42 @@ export function useLocalRAG(sessionId: string) {
       // Generate query embedding for Supabase (768 dimensions)
       const supabaseQueryEmbedding = await generateEmbedding(query);
       
-      // Generate query embedding for Pinecone (3072 dimensions, based on user's DB configuration)
-      let pineconeQueryEmbedding: number[] = [];
-      let pineconeResults: DocumentSearchResult[] = [];
-      
-      try {
-        pineconeQueryEmbedding = await generatePineconeEmbedding(query);
-        if (pineconeQueryEmbedding.length > 0) {
-          try {
-            pineconeResults = await searchPinecone(pineconeQueryEmbedding, config.rag.topK);
-          } catch (pineconeErr: any) {
-             pineconeResults = [{
-                id: -1,
-                content: `Pinecone Search Error: ${pineconeErr.message}`,
-                filename: 'Knowledge Base Error',
-                chunkIndex: 0,
-                similarity: 1,
-                metadata: {}
-             }];
-          }
-        }
-      } catch (err: any) {
-        console.warn('Could not generate Pinecone embedding, skipping Pinecone search', err);
-        pineconeResults = [{
-          id: -2,
-          content: `Embedding Generation Error: ${err.message}`,
-          filename: 'Knowledge Base Error',
-          chunkIndex: 0,
-          similarity: 1,
-          metadata: {}
-        }];
-      }
-
-      // Search for similar chunks in Supabase
+      // 1. First, search for similar chunks in the local Supabase vDB (Session Documents)
       const supabaseResults = await searchSimilar(supabaseQueryEmbedding, sessionId, config.rag.topK);
+      
+      let pineconeResults: DocumentSearchResult[] = [];
+
+      // 2. ONLY call Pinecone (Knowledge Base) if the answer is NOT found in Supabase
+      if (supabaseResults.length === 0) {
+        try {
+          // Generate query embedding for Pinecone (3072 dimensions)
+          const pineconeQueryEmbedding = await generatePineconeEmbedding(query);
+          if (pineconeQueryEmbedding.length > 0) {
+            try {
+              pineconeResults = await searchPinecone(pineconeQueryEmbedding, config.rag.topK);
+            } catch (pineconeErr: any) {
+               pineconeResults = [{
+                  id: -1,
+                  content: `Pinecone Search Error: ${pineconeErr.message}`,
+                  filename: 'Knowledge Base Error',
+                  chunkIndex: 0,
+                  similarity: 1,
+                  metadata: {}
+               }];
+            }
+          }
+        } catch (err: any) {
+          console.warn('Could not generate Pinecone embedding, skipping Pinecone search', err);
+          pineconeResults = [{
+            id: -2,
+            content: `Embedding Generation Error: ${err.message}`,
+            filename: 'Knowledge Base Error',
+            chunkIndex: 0,
+            similarity: 1,
+            metadata: {}
+          }];
+        }
+      }
 
       console.log('Supabase Results:', supabaseResults);
       console.log('Pinecone Results:', pineconeResults);
