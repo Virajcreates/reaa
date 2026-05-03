@@ -60,3 +60,17 @@ dist-ssr
 .yarn/build-state.yml
 .yarn/install-state.gz
 .pnp.*
+
+# Python scripts (evaluation tools, not part of webapp)
+*.py
+
+# PDF documents (sample data, too large for repo)
+*.pdf
+
+# Evaluation data
+*_results.json
+*_metrics.json
+
+# Scratch / temp files
+extracted_text*.txt
+TEST.txt
