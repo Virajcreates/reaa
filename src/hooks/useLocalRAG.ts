@@ -193,50 +193,53 @@ export function useLocalRAG(sessionId: string) {
    */
   const queryDocuments = useCallback(
     async (query: string, language: string = 'English'): Promise<{ answer: string; sources: DocumentSearchResult[] }> => {
-      // Generate query embedding for Supabase (768 dimensions)
-      const supabaseQueryEmbedding = await generateEmbedding(query);
-      
-      // 1. First, search for similar chunks in the local Supabase vDB (Session Documents)
-      const supabaseResults = await searchSimilar(supabaseQueryEmbedding, sessionId, config.rag.topK);
-      
-      let pineconeResults: DocumentSearchResult[] = [];
-
-      // 2. ONLY call Pinecone (Knowledge Base) if the answer is NOT found in Supabase
-      if (supabaseResults.length === 0) {
-        try {
-          // Generate query embedding for Pinecone (3072 dimensions)
-          const pineconeQueryEmbedding = await generatePineconeEmbedding(query);
-          if (pineconeQueryEmbedding.length > 0) {
-            try {
-              pineconeResults = await searchPinecone(pineconeQueryEmbedding, config.rag.topK);
-            } catch (pineconeErr: any) {
-               pineconeResults = [{
-                  id: -1,
-                  content: `Pinecone Search Error: ${pineconeErr.message}`,
-                  filename: 'Knowledge Base Error',
-                  chunkIndex: 0,
-                  similarity: 1,
-                  metadata: {}
-               }];
-            }
+      // Search BOTH sources in parallel for best results
+      const [supabaseResults, pineconeResults] = await Promise.all([
+        // 1. Search local session documents (Supabase, 768-dim embeddings)
+        (async () => {
+          try {
+            const embedding = await generateEmbedding(query);
+            return await searchSimilar(embedding, sessionId, config.rag.topK);
+          } catch (err) {
+            console.warn('Supabase search failed:', err);
+            return [] as DocumentSearchResult[];
           }
-        } catch (err: any) {
-          console.warn('Could not generate Pinecone embedding, skipping Pinecone search', err);
-          pineconeResults = [{
-            id: -2,
-            content: `Embedding Generation Error: ${err.message}`,
-            filename: 'Knowledge Base Error',
-            chunkIndex: 0,
-            similarity: 1,
-            metadata: {}
-          }];
-        }
-      }
+        })(),
 
-      console.log('Supabase Results:', supabaseResults);
-      console.log('Pinecone Results:', pineconeResults);
+        // 2. Search global knowledge base (Pinecone, 3072-dim embeddings)
+        (async () => {
+          try {
+            const embedding = await generatePineconeEmbedding(query);
+            if (embedding.length > 0) {
+              return await searchPinecone(embedding, config.rag.topK);
+            }
+            return [] as DocumentSearchResult[];
+          } catch (err: any) {
+            console.warn('Pinecone search failed:', err);
+            return [] as DocumentSearchResult[];
+          }
+        })(),
+      ]);
 
-      const allResults = [...supabaseResults, ...pineconeResults];
+      console.log(`Search results — Session docs: ${supabaseResults.length}, Knowledge base: ${pineconeResults.length}`);
+
+      // Tag sources so the user can see where each result came from
+      const taggedSupabase = supabaseResults.map((r) => ({
+        ...r,
+        filename: `${r.filename}`,
+      }));
+
+      const taggedPinecone = pineconeResults.map((r) => ({
+        ...r,
+        filename: r.filename.startsWith('Knowledge Base')
+          ? r.filename
+          : `${r.filename}`,
+      }));
+
+      // Combine and sort by similarity (highest first)
+      const allResults = [...taggedSupabase, ...taggedPinecone]
+        .sort((a, b) => b.similarity - a.similarity)
+        .slice(0, config.rag.topK * 2); // Keep top results from both
 
       if (allResults.length === 0) {
         return {
@@ -245,14 +248,14 @@ export function useLocalRAG(sessionId: string) {
         };
       }
 
-      // Generate answer using Gemini with the retrieved context
+      // Generate answer using Gemini with the combined context
       const contextChunks = allResults.map((r) => ({
         content: r.content,
         filename: r.filename,
         similarity: r.similarity,
       }));
 
-      let answer = await queryWithContext(query, contextChunks, language);
+      const answer = await queryWithContext(query, contextChunks, language);
 
       return { answer, sources: allResults };
     },
